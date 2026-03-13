@@ -26,7 +26,7 @@ Features
 
 Installation
 
-git clone https://github.com/YOUR_USERNAME/hf-image-router.git
+git clone https://github.com/technicalboy2023/hf-image-router.git
 cd hf-image-router
 
 python3 -m venv venv
