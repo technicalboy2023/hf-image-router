@@ -14,6 +14,10 @@ app = FastAPI()
 
 load_dotenv()
 
+# ------------------------
+# CONFIG
+# ------------------------
+
 HF_KEYS = [
 os.getenv("HF_KEY_1"),
 os.getenv("HF_KEY_2"),
@@ -27,7 +31,6 @@ os.getenv("HF_KEY_9"),
 os.getenv("HF_KEY_10")
 ]
 
-# remove empty keys
 HF_KEYS = [k for k in HF_KEYS if k]
 
 IMAGE_DIR = "images"
@@ -36,7 +39,6 @@ os.makedirs(IMAGE_DIR, exist_ok=True)
 session = requests.Session()
 
 key_index = 0
-
 
 # ------------------------
 # KEY ROTATION
