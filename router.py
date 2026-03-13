@@ -1,15 +1,16 @@
 from fastapi import FastAPI
+from fastapi.responses import Response
 import requests
-import json
-import time
 import os
+import time
+import random
 from dotenv import load_dotenv
 
 app = FastAPI()
 
-# -------------------------
+# ------------------------
 # LOAD ENV
-# -------------------------
+# ------------------------
 
 load_dotenv()
 
@@ -29,16 +30,17 @@ os.getenv("HF_KEY_10")
 # remove empty keys
 HF_KEYS = [k for k in HF_KEYS if k]
 
-DEFAULT_MODEL = "google/gemma-3-4b-it"
+IMAGE_DIR = "images"
+os.makedirs(IMAGE_DIR, exist_ok=True)
 
 session = requests.Session()
 
 key_index = 0
 
 
-# -------------------------
+# ------------------------
 # KEY ROTATION
-# -------------------------
+# ------------------------
 
 def get_key():
 
@@ -51,111 +53,224 @@ def get_key():
     return key
 
 
-# -------------------------
-# HF CHAT CALL
-# -------------------------
+# ------------------------
+# STYLE PRESETS
+# ------------------------
 
-def hf_chat(model,messages):
+STYLE_PRESETS = {
 
-    key = get_key()
+"cinematic":
+"cinematic lighting, ultra realistic",
 
-    url = "https://router.huggingface.co/v1/chat/completions"
+"anime":
+"anime style, studio ghibli",
+
+"fantasy":
+"fantasy art, magical environment",
+
+"realistic":
+"photorealistic, 8k photography"
+}
+
+
+# ------------------------
+# IMAGE GENERATION
+# ------------------------
+
+def generate_image(model, prompt, negative, width, height):
+
+    url = f"https://router.huggingface.co/hf-inference/models/{model}"
 
     headers = {
-    "Authorization": f"Bearer {key}",
-    "Content-Type": "application/json"
+        "Authorization": f"Bearer {get_key()}"
     }
 
     payload = {
-    "model": model,
-    "messages": messages,
-    "max_tokens": 512
+
+        "inputs": prompt,
+
+        "parameters": {
+
+            "negative_prompt": negative,
+
+            "width": width,
+
+            "height": height
+
+        }
+
     }
 
     try:
 
-        r = session.post(url,json=payload,headers=headers,timeout=120)
+        r = session.post(url, json=payload, headers=headers, timeout=180)
+
+        if r.status_code == 503:
+
+            time.sleep(8)
+
+            r = session.post(url, json=payload, headers=headers)
 
         if r.status_code == 200:
 
-            data = r.json()
+            return r.content
 
-            return data["choices"][0]["message"]["content"]
+    except:
 
-        else:
+        pass
 
-            return f"HF error {r.status_code}"
-
-    except Exception as e:
-
-        return str(e)
+    return None
 
 
-# -------------------------
-# CHAT ENDPOINT
-# -------------------------
+# ------------------------
+# SAVE IMAGE
+# ------------------------
 
-@app.post("/v1/chat/completions")
-async def chat(data:dict):
+def save_image(data):
 
-    messages=data.get("messages",[])
-    model=data.get("model",DEFAULT_MODEL)
+    name = f"{int(time.time())}_{random.randint(1000,9999)}.png"
 
-    reply = hf_chat(model,messages)
+    path = os.path.join(IMAGE_DIR, name)
 
-    return{
-    "id":"chatcmpl-"+str(int(time.time())),
-    "object":"chat.completion",
-    "created":int(time.time()),
-    "model":model,
-    "choices":[
-        {
-        "index":0,
-        "message":{
-            "role":"assistant",
-            "content":reply
-        },
-        "finish_reason":"stop"
-        }
-    ]
+    with open(path, "wb") as f:
+
+        f.write(data)
+
+    return name
+
+
+# ------------------------
+# IMAGE ENDPOINT
+# ------------------------
+
+@app.post("/v1/images/generations")
+
+async def generate(data: dict):
+
+    prompt = data.get("prompt")
+
+    model = data.get("model")
+
+    n = data.get("n", 1)
+
+    width = data.get("width", 1024)
+
+    height = data.get("height", 1024)
+
+    negative = data.get("negative_prompt", "")
+
+    style = data.get("style")
+
+    if style in STYLE_PRESETS:
+
+        prompt = prompt + ", " + STYLE_PRESETS[style]
+
+    if not model:
+
+        model = "black-forest-labs/FLUX.1-schnell"
+
+    results = []
+
+    for _ in range(n):
+
+        img = generate_image(model, prompt, negative, width, height)
+
+        if not img:
+            continue
+
+        name = save_image(img)
+
+        results.append({
+
+            "url": f"/images/{name}",
+
+            "model": model
+
+        })
+
+    return {
+
+        "created": int(time.time()),
+
+        "data": results
+
     }
 
 
-# -------------------------
-# MODELS
-# -------------------------
+# ------------------------
+# IMAGE SERVE
+# ------------------------
+
+@app.get("/images/{img}")
+
+async def serve(img: str):
+
+    path = os.path.join(IMAGE_DIR, img)
+
+    if not os.path.exists(path):
+
+        return {"error": "not found"}
+
+    with open(path, "rb") as f:
+
+        return Response(content=f.read(), media_type="image/png")
+
+
+# ------------------------
+# MODELS LIST
+# ------------------------
 
 @app.get("/v1/models")
+
 async def models():
 
-    r = session.get("https://huggingface.co/api/models?pipeline_tag=text-generation&limit=200")
+    url = "https://huggingface.co/api/models"
 
-    data=r.json()
+    params = {
 
-    models=[]
+        "pipeline_tag": "text-to-image",
+
+        "limit": 1000
+
+    }
+
+    r = session.get(url, params=params)
+
+    data = r.json()
+
+    models = []
 
     for m in data:
 
         models.append({
-        "id":m["modelId"],
-        "object":"model",
-        "owned_by":"huggingface"
+
+            "id": m["modelId"],
+
+            "object": "model"
+
         })
 
-    return{
-    "object":"list",
-    "data":models
+    return {
+
+        "object": "list",
+
+        "data": models
+
     }
 
 
-# -------------------------
+# ------------------------
 # HEALTH
-# -------------------------
+# ------------------------
 
 @app.get("/health")
+
 async def health():
 
-    return{
-    "status":"ok",
-    "keys":len(HF_KEYS)
+    return {
+
+        "status": "ok",
+
+        "keys": len(HF_KEYS)
+
     }
