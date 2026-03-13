@@ -2,22 +2,23 @@ HuggingFace Image Router
 
 OpenAI-compatible router for HuggingFace text-to-image models.
 
-Supports models like:
+Supports models such as:
 
 - FLUX
-- SDXL
 - Stable Diffusion
-- Custom HF models
+- SDXL
+- Kandinsky
+- Playground
 
 ---
 
 Features
 
-- Multiple API keys
+- Multiple HF API keys
 - Round-robin key rotation
 - Style presets
 - Negative prompts
-- Width / height control
+- Width & height control
 - Multi-image generation
 - Local image storage
 - Model listing
@@ -26,29 +27,30 @@ Features
 
 Installation
 
-git clone https://github.com/technicalboy2023/hf-image-router.git
-cd hf-image-router
+cd /home/aman
+mkdir -p routers
+cd routers
 
-python3 -m venv venv
-source venv/bin/activate
-pip install fastapi uvicorn requests python-dotenv
+curl -O https://raw.githubusercontent.com/technicalboy2023/hf-image-router/main/install-router.sh
+chmod +x install-router.sh
+
+bash install-router.sh hf-image-router 9100
 
 ---
 
-Environment Variables
+Configure API Keys
 
-Create ".env":
+nano /home/aman/routers/hf-image-router/.env
+
+Example:
 
 HF_KEY_1=hf_xxxxx
 HF_KEY_2=hf_xxxxx
 HF_KEY_3=
-HF_KEY_4=
 
----
+Restart router:
 
-Run
-
-uvicorn router:app --host 0.0.0.0 --port 9100
+sudo systemctl restart hf-image-router
 
 ---
 
@@ -58,23 +60,27 @@ POST /v1/images/generations
 
 Example:
 
-{
+curl http://localhost:9100/v1/images/generations \
+-H "Content-Type: application/json" \
+-d '{
 "model":"black-forest-labs/FLUX.1-schnell",
 "prompt":"cyberpunk city neon lights",
-"n":1,
-"width":1024,
-"height":1024
-}
+"n":1
+}'
 
 ---
 
-Get Image
+View Image
 
 GET /images/{filename}
 
+Example:
+
+http://localhost:9100/images/123456.png
+
 ---
 
-Health
+Health Check
 
 GET /health
 
